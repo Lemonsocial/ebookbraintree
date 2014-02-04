@@ -1,0 +1,412 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the ebookbraintree module
+ *
+ * In this version we demonstrate the use of hook_update_N() to add
+ * a new database table.
+ *
+ * For more information on hook_update_N(), see:
+ * http://drupal.org/node/150215 and
+ * http://api.drupal.org/api/drupal/modules--system--system.api.php/function/hook_update_N/7
+ */
+
+/**
+ * Implements hook_install().
+ */
+function ebookbraintree_install() {
+ // Set the variables for this module
+  variable_set('ebookbraintree_environment', "");
+  variable_set('ebookbraintree_merchantId_testkey', "");
+  variable_set('ebookbraintree_merchantId_livekey', "");
+  variable_set('ebookbraintree_publishable_testkey', "");
+  variable_set('ebookbraintree_publishable_livekey', "");
+  variable_set('ebookbraintree_secret_testkey', "");
+  variable_set('ebookbraintree_secret_livekey', "");
+  variable_set('ebookbraintree_price', "");
+  variable_set('ebookbraintree_gonelive', "");
+  variable_set('ebookbraintree_sendemail', "");
+  variable_set('ebookbraintree_firstname', "");
+  variable_set('ebookbraintree_lastname', "");
+  variable_set('ebookbraintree_phone', "");
+  variable_set('ebookbraintree_address', "");
+  variable_set('ebookbraintree_address2', "");
+  variable_set('ebookbraintree_city', "");
+  variable_set('ebookbraintree_county', "");
+  variable_set('ebookbraintree_state', "");
+  variable_set('ebookbraintree_zip', "");
+  variable_set('ebookbraintree_site_name', "");
+  variable_set('ebookbraintree_site_mail', "");
+  $t = get_t();
+
+  drupal_set_message(t("EbookBraintree module installed.  Customer database and custom node type installed."));
+} 
+ 
+/**
+ * Implements hook_schema().
+ */
+function ebookbraintree_schema() {
+  $schema['ebookbraintree_customers'] = array(
+    'description' => 'Stores the name and email of each customer that buys a book using braintreepayments.com and the ebookbraintree module',
+    'fields' => array(
+      'thid' => array(
+        'description' => 'The unique ID for each customer',
+        'type' => 'serial',
+        'not null' => FALSE,
+      ),
+      'timestamp' => array(
+        'description' => 'The Unix timestamp when this customer was added.',
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'contactname' => array(
+        'description' => 'The name of the customer',
+        'type' => 'text',
+        'not null' => FALSE,
+      ),
+      'contactemail' => array(
+        'description' => 'The email of the customer.',
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'booktype' => array(
+        'description' => 'A book type or option for the digital product',
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+    ),
+    'primary key' => array('thid'),
+  );
+
+  return $schema;
+}
+
+
+/**
+ * Adds ebookbraintree_customers table.
+ */
+function ebookbraintree_update_7001() {
+  $schema['ebookbraintree_customers'] = array(
+    'description' => 'Stores the name and email of each customer that buys a book using braintreepayments.com and the ebookbraintree module',
+    'fields' => array(
+      'thid' => array(
+        'description' => 'The unique ID for each customer',
+        'type' => 'serial',
+        'not null' => FALSE,
+      ),
+      'timestamp' => array(
+        'description' => 'The Unix timestamp when this customer was added.',
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'contactname' => array(
+        'description' => 'The name of the customer',
+        'type' => 'text',
+        'not null' => FALSE,
+      ),
+      'contactemail' => array(
+        'description' => 'The email of the customer.',
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'booktype' => array(
+        'description' => 'A book type or option for the digital product',
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+    ),
+    'primary key' => array('thid'),
+  );
+
+  db_create_table('ebookbraintree_customers', $schema['ebookbraintree_customers']);
+  drupal_set_message(t("database INstalled"));
+}
+
+/**
+ * Return an array of fields, to be used during the install and uninstall process.
+ */
+function _ebookbraintree_installed_fields() {
+  return array(
+    'ebookbraintree_title' => array(
+      'field_name' => 'ebookbraintree_title',
+      'type' => 'text',
+      'cardinality' => 1,
+    ),
+    'ebookbraintree_author' => array(
+      'field_name' => 'ebookbraintree_author',
+      'type' => 'text',
+      'cardinality' => 1,
+    ),
+    'ebookbraintree_tag_line' => array(
+      'field_name' => 'ebookbraintree_tag_line',
+      'type' => 'text',
+      'cardinality' => 1,
+    ),
+    'ebookbraintree_price' => array(
+      'field_name' => 'ebookbraintree_price',
+      'type' => 'text',
+      'cardinality' => 1,
+    ),
+    'ebookbraintree_version' => array(
+      'field_name' => 'ebookbraintree_version',
+      'type' => 'text',
+      'cardinality' => 1,
+    ),
+    'ebookbraintree_cover_image' => array(
+      'field_name' => 'ebookbraintree_cover_image',
+      'type' => 'image',
+      'cardinality' => 1,
+    ),
+  );
+}
+
+
+/**
+ * Return an array of instances, to be used during the install and uninstall process.
+ */
+function _ebookbraintree_installed_instances() {
+  $t = get_t();
+  return array(
+    'ebookbraintree_title' => array(
+      'field_name' => 'ebookbraintree_title',
+      'label' => $t('Book Title'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+    ),
+    'ebookbraintree_author' => array(
+      'field_name' => 'ebookbraintree_author',
+      'label' => $t('Book Author'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+    ),
+    'ebookbraintree_tag_line' => array(
+      'field_name' => 'ebookbraintree_tag_line',
+      'label' => $t('Book Tag Line'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+    ),
+    'ebookbraintree_price' => array(
+      'field_name' => 'ebookbraintree_price',
+      'label' => $t('Book Price'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+    ),
+    'ebookbraintree_version' => array(
+      'field_name' => 'ebookbraintree_version',
+      'label' => $t('Which versions: pdf, epub, mobi, etc'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text',
+      ),
+    ),
+    'ebookbraintree_cover_image' => array(
+      'field_name' => 'ebookbraintree_cover_image',
+      'label' => $t('Upload an image:'),
+      'required' => FALSE,
+      'widget' => array(
+        'type' => 'image_image',
+      ),
+    ),
+  );
+}
+
+
+/**
+ * Implements hook_uninstall().
+ *
+ */
+function ebookbraintree_uninstall() {
+// types: ebookbraintree_beginning ebookbraintree_cover ebookbraintree_general ebookbraintree_illustration ebookbraintree_button ebookbraintree_chapter1end ebookbraintree_product 
+  $sql = 'SELECT nid FROM {node} n WHERE n.type = :type';
+  $result = db_query($sql, array(':type' => 'ebookbraintree_beginning'));
+  $nids = array();
+  foreach ($result as $row) {
+    $nids[] = $row->nid;
+  }
+  // Delete all the nodes at once
+  // http://api.drupal.org/api/function/node_delete_multiple/7
+  node_delete_multiple($nids);
+
+  $sql = 'SELECT nid FROM {node} n WHERE n.type = :type';
+  $result = db_query($sql, array(':type' => 'ebookbraintree_cover'));
+  $nids = array();
+  foreach ($result as $row) {
+    $nids[] = $row->nid;
+  }
+  node_delete_multiple($nids);
+  
+  $sql = 'SELECT nid FROM {node} n WHERE n.type = :type';
+  $result = db_query($sql, array(':type' => 'ebookbraintree_general'));
+  $nids = array();
+  foreach ($result as $row) {
+    $nids[] = $row->nid;
+  }
+  node_delete_multiple($nids);
+  
+  $sql = 'SELECT nid FROM {node} n WHERE n.type = :type';
+  $result = db_query($sql, array(':type' => 'ebookbraintree_illustration'));
+  $nids = array();
+  foreach ($result as $row) {
+    $nids[] = $row->nid;
+  }
+  node_delete_multiple($nids);
+  
+  $sql = 'SELECT nid FROM {node} n WHERE n.type = :type';
+  $result = db_query($sql, array(':type' => 'ebookbraintree_button'));
+  $nids = array();
+  foreach ($result as $row) {
+    $nids[] = $row->nid;
+  }
+  node_delete_multiple($nids);
+  
+  $sql = 'SELECT nid FROM {node} n WHERE n.type = :type';
+  $result = db_query($sql, array(':type' => 'ebookbraintree_product'));
+  $nids = array();
+  foreach ($result as $row) {
+    $nids[] = $row->nid;
+  }
+  node_delete_multiple($nids);
+  
+  // Delete Braintree Key variables.
+ variable_del('ebookbraintree_environment');
+  variable_del('ebookbraintree_merchantId_testkey');
+  variable_del('ebookbraintree_merchantId_livekey');
+  variable_del('ebookbraintree_publishable_testkey');
+  variable_del('ebookbraintree_publishable_livekey');
+  variable_del('ebookbraintree_secret_testkey');
+  variable_del('ebookbraintree_secret_livekey');
+  variable_del('ebookbraintree_price');
+  variable_del('ebookbraintree_gonelive');
+  variable_del('ebookbraintree_sendemail');
+  variable_del('ebookbraintree_firstname');
+  variable_del('ebookbraintree_lastname');
+  variable_del('ebookbraintree_phone');
+  variable_del('ebookbraintree_address');
+  variable_del('ebookbraintree_address2');
+  variable_del('ebookbraintree_city');
+  variable_del('ebookbraintree_county');
+  variable_del('ebookbraintree_state');
+  variable_del('ebookbraintree_zip');
+  variable_del('ebookbraintree_introduction');
+  variable_del('ebookbraintree_forward');
+  variable_del('ebookbraintree_resources');
+  variable_del('ebookbraintree_whyshouldyouread');
+  variable_del('ebookbraintree_copyright');
+  variable_del('ebookbraintree_abouttheauthor');
+  variable_del('ebookbraintree_conclusion');
+  variable_del('ebookbraintree_tableofcontents');
+  variable_del('ebookbraintree_site_name');
+  variable_del('ebookbraintree_site_mail');
+
+  // Loop over each of the fields defined by this module and delete
+  // all instances of the field, their data, and the field itself.
+  // http://api.drupal.org/api/function/field_delete_field/7  
+  foreach (array_keys(_ebookbraintree_installed_fields()) as $field) {
+    field_delete_field($field);
+  }
+
+  field_delete_field("field_ebookbraintree_chapter");
+  field_delete_field("field_ebookbraintree_pic");
+  
+  // Loop over any remaining field instances attached to the node_example
+  // content type (such as the body field) and delete them individually.
+  // http://api.drupal.org/api/function/field_delete_field/7
+  $instances = field_info_instances('node', 'ebookbraintree_beginning');
+  foreach ($instances as $instance_name => $instance) {
+    field_delete_instance($instance);
+  }
+  
+  $instances = field_info_instances('node', 'ebookbraintree_cover');
+  foreach ($instances as $instance_name => $instance) {
+    field_delete_instance($instance);
+  }
+  
+  $instances = field_info_instances('node', 'ebookbraintree_general');
+  foreach ($instances as $instance_name => $instance) {
+    field_delete_instance($instance);
+  }
+  
+  $instances = field_info_instances('node', 'ebookbraintree_illustration');
+  foreach ($instances as $instance_name => $instance) {
+    field_delete_instance($instance);
+  }
+
+  $instances = field_info_instances('node', 'ebookbraintree_button');
+  foreach ($instances as $instance_name => $instance) {
+    field_delete_instance($instance);
+  }
+  
+  $instances = field_info_instances('node', 'ebookbraintree_product');
+  foreach ($instances as $instance_name => $instance) {
+    field_delete_instance($instance);
+  }
+ 
+//  types: ebookbraintree_beginning ebookbraintree_cover ebookbraintree_general ebookbraintree_illustration ebookbraintree_button ebookbraintree_chapter1end ebookbraintree_product   
+   // Delete our content type
+  // http://api.drupal.org/api/function/node_type_delete/7
+  node_type_delete('ebookbraintree_beginning');
+  node_type_delete('ebookbraintree_cover');
+  node_type_delete('ebookbraintree_general');
+  node_type_delete('ebookbraintree_beginning');
+  node_type_delete('ebookbraintree_illustration');
+  node_type_delete('ebookbraintree_button');
+  node_type_delete('ebookbraintree_product');
+
+// ebookbraintree_chapter2end is the content type
+foreach (array_keys(node_type_get_names()) as $term)
+{
+if (stristr($term, "ebookbraintree_chapter"))
+{
+$sql = 'SELECT nid FROM {node} n WHERE n.type = :type';
+  $result = db_query($sql, array(':type' => "$term"));
+  $nids = array();
+  foreach ($result as $row) {
+    $nids[] = $row->nid;
+}
+node_delete_multiple($nids);
+node_type_delete($term);
+}
+}
+
+
+// booktitle_chapter1
+$listofbooks = variable_get('ebookbraintree_number_chapters');
+$listofbooks = explode(" ", $listofbooks);
+foreach ($listofbooks as $book) {
+$numchapter = explode("-", $book);
+
+for ($x=0; $x<=$numchapter[1]; $x++)
+{
+$term = $numchapter[0] . "_chapter" . $x;
+user_role_delete($term);
+$taxterm = taxonomy_get_term_by_name($term);
+if ($taxterm)
+{
+foreach (array_keys($taxterm) as $tid)
+{
+taxonomy_term_delete($tid);
+}
+}
+
+}  
+}
+variable_del('ebookbraintree_number_chapters');
+
+  // Purge all field infromation
+  // http://api.drupal.org/api/function/field_purge_batch/7
+  field_purge_batch(1000);
+  drupal_flush_all_caches();
+}

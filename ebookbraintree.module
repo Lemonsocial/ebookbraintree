@@ -1,0 +1,1267 @@
+<?php
+
+/**
+ * @file
+ * Module to accept billing information and process transactions with Braintree Payments.
+ */
+// $term_name = $booktitle . "_" . "chapter" . $x; 
+/**
+ * Implements hook_help().
+ */
+function ebookbraintree_help($path, $arg) {
+  switch ($path) {
+    case 'admin/help#ebookbraintree':
+      return t('<p>EbookBraintree payments help here.</p>');
+    case 'admin/settings/ebookbraintree':
+      return t('<p>EbookBraintree payments help here.</p>');
+  }
+}
+
+/**
+ * Implements hook_init() to run on every page.
+ */
+function ebookbraintree_init() {
+// if (drupal_is_front_page()) {
+// drupal_set_message("front page");  
+// }
+drupal_add_css(drupal_get_path('module', 'ebookbraintree') . '/ebookbraintree.css', array('scope' => 'footer'));
+  if (arg(0) == 'node' && is_numeric(arg(1))) {
+    $nid = arg(1);
+    $node = node_load($nid);
+    $type = $node->type;
+    if ($type == "ebookbraintree_product") {
+      drupal_add_js(drupal_get_path('module', 'ebookbraintree') . '/js/ebookbraintree.js', array('scope' => 'footer'));
+    }
+  }
+  
+  // admin/config/services/ebookbraintree
+if (arg(0) == 'admin' && arg(1) == 'config' && arg(2) == 'services' && arg(3) == 'ebookbraintree') {
+  $testvariable = variable_get('ebookbraintree_sslmessage');
+  if ($testvariable > 0) {
+    global $base_root;
+    drupal_set_message($base_root);
+    if (!stristr($base_root, "https")) {
+      drupal_set_message("Your server is using an insecure connection - http - to serve credit card information to the payment processor. ", "error");
+      }
+    }
+}
+  
+  if (arg(0) == 'startreading') {
+  drupal_add_js(drupal_get_path('module', 'ebookbraintree') . '/js/startreading.js', array('scope' => 'footer'));
+  }
+  // book/bbb/chapter/1
+  if (!is_numeric(arg(0)) && arg(2) == 'chapter' && is_numeric(arg(3))) {
+  drupal_add_js(drupal_get_path('module', 'ebookbraintree') . '/js/chapter.js', array('scope' => 'footer'));
+  }
+  
+  
+}
+
+
+function ebookbraintree_startreading()
+{
+$query = new EntityFieldQuery();
+$entities = $query->entityCondition('entity_type', 'node')
+   ->propertyCondition('status', 1)
+   ->entityCondition('bundle', 'ebookbraintree_cover')
+   ->execute();  
+if($entities)
+{
+$nodes = entity_load('node', array_keys($entities['node']));
+return node_view_multiple($nodes, 'full');
+}
+else
+{
+return drupal_set_message("No e-books have been created yet");  
+}
+}
+
+
+/**
+ * Implements hook_menu().
+ */
+function ebookbraintree_menu() {
+  $items = array();
+
+  $items['admin/config/services/ebookbraintree/reports'] = array(
+    'title' => 'EbookBraintree Sales Reports',
+    'description' => 'Who has bought your book through Braintree Payments',
+    'page callback' => 'ebookbraintree_reports_view',
+    'access arguments' => array('access content'),
+    'weight' => 2,
+    'type' => MENU_NORMAL_ITEM,
+  );
+  
+  $items['admin/config/services/ebookbraintree/create'] = array(
+    'title' => 'Create an online e-book',
+    'description' => 'Create an online e-book',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ebookbraintree_creator_form'),
+    'file' => 'ebookbraintree.creator.inc',
+    'access callback' => TRUE,
+    'type' => MENU_NORMAL_ITEM,
+  );
+  
+  $items['admin/config/services/ebookbraintree/readme'] = array(
+    'title' => 'EbookBraintree set up instructions',
+    'description' => 'Read Me file',
+    'page callback' => 'ebookbraintree_readme_view',
+    'access arguments' => array('access content'),
+    'weight' => 3,
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['admin/config/services/ebookbraintree'] = array(
+    'title' => 'EbookBraintree',
+    'page callback' => 'drupal_get_form',
+    'access callback' => 'user_access',
+    'access arguments' => array('administer ebookbraintree'),
+    'page arguments' => array('ebookbraintree_admin_settings', NULL),
+    'type' => MENU_CALLBACK,
+    'file' => 'ebookbraintree.admin.inc',
+    'description' => 'Configure Braintre keys provided by Braintreepayments.com when you register there.',
+  );
+  
+  $items['book/%/chapter/buynow/%'] = array(
+    'title' => 'Buy Now',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array(4),
+    'page arguments' => array('ebookbraintree_create_form'),
+    'access callback' => TRUE,
+  );
+ 
+ $items['book/%/chapter/%'] = array(
+    'title' => 'My Page',
+    'page callback' => 'ebookbraintree_load_chapter',
+    'page arguments' => array(1, 3),
+    'type' => MENU_CALLBACK,
+    'access callback' => TRUE,
+  );
+ 
+ $items['delete/%'] = array(
+    'title' => 'Delete this',
+    'page callback' => 'ebookbraintree_delete_chapter',
+    'page arguments' => array(1),
+    'type' => MENU_CALLBACK,
+    'access callback' => TRUE,
+  );
+  
+  $items['startover'] = array(
+    'title' => 'Delete current book and start over?',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ebookbraintree_start_over'),
+    'access callback' => TRUE,
+  );
+  
+  $items['startreading'] = array(
+    'title' => 'Start Reading...',
+    'page callback' => 'ebookbraintree_startreading',
+    'type' => MENU_NORMAL_ITEM,
+    'access callback' => TRUE,
+  );
+  
+  return $items;
+}
+
+/**
+ * The callback function to let the admin view the customers of the site even if they don't have the Views module installed.  This module has little dependency on other modules.
+ */
+function ebookbraintree_reports_view()
+{
+  $header = array(
+    // The header gives the table the information it needs in order to make
+    // the query calls for ordering. TableSort uses the field information
+    // to know what database column to sort by.
+    array('data' => t('ID'), 'field' => 'n.thid'),
+    array('data' => t('Name'), 'field' => 'n.contactname'), 
+    array('data' => t('Email'), 'field' => 'n.contactemail'),
+    array('data' => t('Date'), 'field' => 'n.timestamp'),
+    array('data' => t('Book Type'), 'field' => 'n.booktype'),
+  );
+
+  $query = db_select('ebookbraintree_customers', 'n')
+    ->extend('TableSort')->extend('PagerDefault'); 
+  $query->fields('n');
+
+  $result = $query
+    ->orderByHeader($header)->limit(10)
+    ->execute();
+ $num_rows = $query->countQuery()->execute()->fetchField();
+ if ($num_rows < 1) {
+    $output = "No books sold yet.";
+  }
+  else {
+  $rows = array();
+  foreach ($result as $row) {
+  $rows[] = array(
+        $row->thid,
+        $row->contactname,
+        $row->contactemail,
+        format_interval(REQUEST_TIME - $row->timestamp) . ' ' . t('ago'),
+        $row->booktype,
+      );
+}
+
+  // build the table for the nice output.
+  $output['tablesort_table'] = array(
+    '#theme' => 'table',
+    '#header' => $header,
+    '#rows' => $rows,
+  );
+  }
+  return $output;
+}
+
+
+
+/**
+ * The online read me file with instructions for the admin linked from the configuration page of this module
+ */
+function ebookbraintree_readme_view() {
+  // Format output.
+  $build = array(
+    'render_array_paragraph' => array(
+      '#type' => 'markup',
+      '#markup' => '<h2>Congradulations on installing the EbookBraintree module.</h2><p>This is an e-commerce module for processing payment using Braintree Payments for single digital items, if you do not feel like using an entire store like Ubercart or Commerce.',
+    ),
+    'why_render_arrays' => array(
+      '#items' => array(
+        '- This is made to be simple to set up and sell, but nothing is plug-and-play',
+        '- For larger volume of selling, please use Drupal Commerce or Ubercart',
+        '- This does not work with other payment gateways such as Paypal or Authorize.net',
+        '- This does not \"plugin\" to or rely on other Drupal systems such as Views, Rules, etc...',
+        '- The goal is just a simple, quick loading solution',
+        '- This requires Javascript to be enabled at all times to function',
+        '- Braintree payment processor and this module do not interact with your Drupal site in regards to credit card information',
+        '',
+        'Installing',
+        '1) Install the module Node View Permissions in /sites/all/modules like all other modules',
+        '2) Install and enable this module in /sites/all/modules like all other modules',
+        '3) the module will auto-install content types, product fields, a checkout page and a sales report page for you.',
+        '',
+        'Configuring',
+        '- Set up your banking information and get approved at Braintreepayments.com - this will take a day or week',
+        '- Open the webpage admin/config/services/ebookbraintree and enter your Braintree Payments account details and options',
+        '- For both test and live modes, Braintree will give you 4 different keys: environment, merchant ID, public and private key',
+        '- The environment for testing is sandbox',
+        '- Braintree Payments will give you these, so enter them in to your Drupal site, DO NOT check the live? box, and click save',
+        '- When site users view a node of that type, they can immediately click the checkout button to purchase it on site with their credit card.',
+        '- Open the webpage admin/config/services/ebookbraintree/create , click through the options and create the outline of your ebook!',
+        '- Write or copy and paste your book content into the chapters/sections and save each one',
+        '- Upload some images like a cover or illustrations if you want',
+        '- Design/theme your site/book if you want',
+        '- Open the webpage admin/config/content/node-view-permissions and select the sections you want to charge for and click save',
+        '- Open the webpage admin/people/permissions/roles and make sure each role can see that chapter for that ebook with permissions',
+        '- For example, when someone buys chapter 1 of ebook named \"My Cool Book\" , they receive role my_cool_book_chapter1',
+        '- So, for role role my_cool_book_chapter1, set the permission of that to ebookbraintree_chapter1end: View own content and click save',
+        '',
+        'Testing',
+        '- Open the webpage startreading and select a book and then a chapter from that book',
+        '- There will be a button telling you to buy the full chapter at the bottom of the page.  Click it.',
+        '- Enter in user information...',
+        '- Use credit card number 4242424242424242 and cvc number 123 to test.',
+        '- Hopefully it worked without much hoopla!',
+        '- Go to admin/config/services/ebookbraintree/reports for a simple report of your successful sales in Drupal',
+        '- Visit https://braintreepayments.com/, sign in, go to your reports, and you should see your credit card transaction show up.',
+        '- Open the webpage admin/config/services/ebookbraintree and enter your LIVE Braintree Payments details, check the live? box and click save',
+        '- Repeat the above steps with your live account info from Braintree (and small amounts of money to test).',
+        '- You are now open for business!',
+        '- Drupal does not receive or save any transaction info besides the customer name, email, and what chapter they bought!',
+        '- This is a basic starter kit with which you can alter to your liking',
+        '',
+        'Uninstalling',
+        '- Uninstalling this module removes all of your products and customer database info from Drupal!  Not from Braintreepayments.com, however.',
+        '',
+        'Security',
+        '- You should probably get your website hosting company to install SSL on your server for customer trust/confidence.  It may not be demanded, though.  For more information, please read https://support.braintreepayments.com/customer/portal/articles/1125489-ssl-certificates .',
+        '',
+        'To Do:',
+        '- better reporting page.  Keep in mind, this will not save anything about the credit cards to be PCI-compliant.',
+        '- more configuration.',
+      ),
+      '#title' => 'How to use:',
+      '#theme' => 'item_list',
+    ),
+  );
+
+  return $build;
+}
+
+
+
+
+function ebookbraintree_start_over($form, $form_state) {
+$form = array();
+$form['ebookbraintree_startover'] = array(
+    '#type' => 'markup',
+    '#title' => t('Remove a book?'),
+    '#markup' => '<p>Press one of the links below to delete that book.</p>',
+  );
+$listofbooks = variable_get('ebookbraintree_number_chapters');
+$listofbooks = str_replace("-",'', $listofbooks);
+$listofbooks = str_replace(range(0,9),'', $listofbooks);
+$listofbooks = explode(" ", $listofbooks);
+
+$thehtml = "<p>";
+foreach ($listofbooks as $book) {
+$thehtml = $thehtml . "<a href='delete/$book'>" . $book . "</a><br />";
+}
+$thehtml = $thehtml . "</p>";
+
+$form['ebookbraintree_deletelinks'] = array(
+    '#type' => 'markup',
+    '#title' => t('Choose'),
+    '#markup' => $thehtml,
+  );
+  
+return $form;
+}
+
+function ebookbraintree_delete_chapter() {
+$whichbook = arg(1);
+$listofbooks = variable_get('ebookbraintree_number_chapters');
+$listofbooks = explode(" ", $listofbooks);
+foreach ($listofbooks as $book) {
+
+if (strpos($book,$whichbook) !== false) {
+$key = array_search("$book", $listofbooks);
+if ($key !== false) {
+unset($listofbooks[$key]);
+$string = implode(" ", $listofbooks);
+variable_set('ebookbraintree_number_chapters', $string);
+}
+
+$listofbooks2 = explode("-", $book);
+$numchapters = $listofbooks2[1];
+
+for ($x=0; $x<=$numchapters; $x++)
+{
+$rolename = $whichbook . "_chapter" . $x;
+user_role_delete($rolename);
+
+$term = taxonomy_get_term_by_name($rolename);
+if (isset($term))
+{
+$termid = key($term);
+$query = new EntityFieldQuery();
+$entities = $query->entityCondition('entity_type', 'node')
+   ->propertyCondition('status', 1)
+    ->fieldCondition('field_ebookbraintree_chapter', 'tid', "$termid")
+   ->execute();  
+$nids = array_keys($entities['node']);
+node_delete_multiple($nids);
+}
+
+$term = taxonomy_get_term_by_name($rolename);
+if ($term)
+{
+foreach (array_keys($term) as $tid)
+{
+taxonomy_term_delete($tid);
+}
+}
+}
+}
+}
+  field_purge_batch(1000);
+  drupal_flush_all_caches();
+  drupal_set_message("You deleted the book.  Time to make a new one!  One at a time for now please.");
+  drupal_goto();
+}  
+
+
+/**
+ * First page of a multi-page form.
+ * This page provides billing fields.
+ *
+ * @param array $form
+ *   Define form elements.
+ *
+ * @param array $form_state
+ *   State of current forms including passed values.
+ *
+ * @return array
+ */
+function ebookbraintree_create_form($form, $form_state) {
+
+  // Return payment section of form if page_num == 2.
+  if (!empty($form_state['page_num']) && $form_state['page_num'] == 2) {
+    return ebookbraintree_form_payment($form, $form_state);
+  }
+
+  // Set page_num to 1 and build page 1.
+  $form_state['page_num'] = 1;
+  $form = array();
+  // Define form as hierarchy so we can access both pages as trees.
+  $form['#tree'] = TRUE;
+
+  
+  $form['billing'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Billing & Account Details - Enter your account for this site, or this will create one for you.'),
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+  );
+
+  // Check for $form_state values returned on form rebuild and when submitting the back button.
+  global $user;
+  if($user->uid == 0)
+  {
+  $email = isset($form_state['values']['billing']['email']) ? $form_state['values']['billing']['email'] : '';
+  $form['billing']['email'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Email'),
+    '#required' => TRUE,
+    '#default_value' => $email,
+
+    // Perform ajax validation.
+    '#ajax' => array(
+      'callback' => '_ebookbraintree_form_email_ajax_validate',
+      'wrapper' => 'email-error',
+      'effect' => 'slide',
+    ),
+    '#suffix' => '<div id="email-error" style="color:#ff0000;"> </div>',
+  );
+
+  $form['billing']['password'] = array(
+    '#type' => 'password',
+    '#title' => t('Password'),
+    '#required' => TRUE,
+  );
+
+  $form['billing']['conf-password'] = array(
+    '#type' => 'password',
+    '#title' => t('Confirm Password'),
+    '#required' => TRUE,
+  );
+  }
+  else
+  {
+  $email = $user->mail;
+  $form['billing']['email'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Email'),
+    '#required' => TRUE,
+    '#default_value' => $email,
+
+    // Perform ajax validation.
+    '#ajax' => array(
+      'callback' => '_ebookbraintree_form_email_ajax_validate',
+      'wrapper' => 'email-error',
+      'effect' => 'slide',
+    ),
+    '#suffix' => '<div id="email-error" style="color:#ff0000;"> </div>',
+  );
+  }
+  
+
+  $form['billing']['product'] = array(
+    '#type' => 'hidden',
+    '#title' => t('product'),
+    '#required' => TRUE,
+    '#default_value' => arg(2),
+  );
+  
+  $testvariable = variable_get('ebookbraintree_firstname');
+  if ($testvariable > 0) {
+  $firstname = isset($form_state['values']['billing']['firstname']) ? $form_state['values']['billing']['firstname'] : '';
+  $form['billing']['firstname'] = array(
+    '#type' => 'textfield',
+    '#title' => t('First Name'),
+    '#required' => TRUE,
+    '#default_value' => $firstname,
+  );
+  }
+  
+  $testvariable = variable_get('ebookbraintree_lastname');
+  if ($testvariable > 0) {
+  $lastname = isset($form_state['values']['billing']['lastname']) ? $form_state['values']['billing']['lastname'] : '';
+  $form['billing']['lastname'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Last Name'),
+    '#required' => TRUE,
+    '#default_value' => $lastname,
+  );
+  }
+
+  $testvariable = variable_get('ebookbraintree_phone');
+  if ($testvariable > 0) {
+  $phone = isset($form_state['values']['billing']['phone']) ? $form_state['values']['billing']['phone'] : '';
+  $form['billing']['phone'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Phone'),
+    '#required' => TRUE,
+    '#default_value' => $phone,
+  );
+  }
+
+  $testvariable = variable_get('ebookbraintree_address');
+  if ($testvariable > 0) {
+  $address = isset($form_state['values']['billing']['address']) ? $form_state['values']['billing']['address'] : '';
+  $form['billing']['address'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Address Line 1'),
+    '#required' => TRUE,
+    '#default_value' => $address,
+  );
+  }
+  
+  $testvariable = variable_get('ebookbraintree_address2');
+  if ($testvariable > 0) {
+  $address2 = isset($form_state['values']['billing']['address2']) ? $form_state['values']['billing']['address2'] : '';
+  $form['billing']['address2'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Address Line 2'),
+    '#default_value' => $address2,
+  );
+  }
+  
+  $testvariable = variable_get('ebookbraintree_city');
+  if ($testvariable > 0) {
+  $city = isset($form_state['values']['billing']['city']) ? $form_state['values']['billing']['city'] : '';
+  $form['billing']['city'] = array(
+    '#type' => 'textfield',
+    '#title' => t('City'),
+    '#required' => TRUE,
+    '#default_value' => $city,
+  );
+  }
+
+  $testvariable = variable_get('ebookbraintree_county');
+  if ($testvariable > 0) {
+  $county = isset($form_state['values']['billing']['county']) ? $form_state['values']['billing']['county'] : '';
+  $form['billing']['county'] = array(
+    '#type' => 'textfield',
+    '#title' => t('County'),
+    '#required' => TRUE,
+    '#default_value' => $county,
+  );
+  }
+
+  $testvariable = variable_get('ebookbraintree_state');
+  if ($testvariable > 0) {
+  $state = isset($form_state['values']['billing']['state']) ? $form_state['values']['billing']['state'] : '';
+  $form['billing']['state'] = array(
+    '#type' => 'textfield',
+    '#title' => t('State'),
+    '#required' => TRUE,
+    '#default_value' => $state,
+  );
+  }
+  
+  $testvariable = variable_get('ebookbraintree_zip');
+  if ($testvariable > 0) {
+  $zip = isset($form_state['values']['billing']['zip']) ? $form_state['values']['billing']['zip'] : '';
+  $form['billing']['zip'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Zip'),
+    '#required' => TRUE,
+    '#size' => 10,
+    '#maxlength' => 10,
+    '#default_value' => $zip,
+  );
+  }
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => 'Next',
+    '#submit' => array('ebookbraintree_form_tracker'),
+    '#validate' => array('ebookbraintree_form_billing_validate'),
+  );
+  return $form;
+}
+
+/**
+ * Track what page the form is on and rebuild form.
+ *
+ * @param array $form
+ *   Elements to make up the form.
+ *
+ * @param array $form_state
+ *   Form element value state of current form.
+ */
+function ebookbraintree_form_tracker($form, &$form_state) {
+  $form_state['page_values'][1] = $form_state['values'];
+
+  if (!empty($form_state['page_values'][2])) {
+    $form_state['values'] = $form_state['page_values'][2];
+  }
+
+  // Define page number on form rebuild.
+  $form_state['page_num'] = 2;
+  $form_state['rebuild'] = TRUE;
+}
+
+/**
+ * Set page_num to 1 and rebuild form when back button is clicked.
+ *
+ * @param array $form
+ *   Form elements to build the form.
+ *
+ * @param array $form_state
+ *   Form state elements to pass values.
+ */
+function ebookbraintree_form_back($form, &$form_state) {
+  $form_state['values'] = $form_state['page_values'][1];
+  $form_state['page_num'] = 1;
+  $form_state['rebuild'] = TRUE;
+}
+
+/**
+ * Provide page two of form to collect payment information and process with ebookbraintree.
+ *
+ * @param array $form
+ *   Form elements to build the form.
+ *
+ * @param array $form_state
+ *   Form state elements to pass values.
+ *
+ * @return array
+ *   return form and form_state arrays.
+ */
+function ebookbraintree_form_payment($form, $form_state) {
+  drupal_add_js('https://js.braintreegateway.com/v1/braintree.js', 'external');
+  drupal_add_js(drupal_get_path('module', 'ebookbraintree') . '/js/ebookbraintree.js');
+
+  $form['payment'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Payment Details'),
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+  );
+  
+  $form['payment']['instructions'] = array(
+    '#type' => 'markup',
+    '#title' => t('Demo information'),
+    '#markup' => '<p>Please use the demo credit card # of 4242424242424242 and CVC # of 123 to fake buy this.</p>',
+  );
+  
+  $form['payment']['braintreetoken'] = array(
+    '#type' => 'hidden',
+    '#title' => t('braintreetoken'),
+  );
+  
+  $form['payment']['card'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Card'),
+    '#size' => 20,
+    '#maxlength' => 16,
+    '#description' => t('Enter your card number'),
+    '#attributes' => array(
+      'class' => array('card-number'),
+      'data-encrypted-name' => 'number',
+      'autocomplete' => 'off',
+    ),
+    // '#required' => TRUE,
+  );
+  $form['payment']['cvc'] = array(
+    '#type' => 'textfield',
+    '#title' => t('CVC'),
+    '#size' => 3,
+    '#maxlength' => 3,
+    '#description' => t('Enter the CVC number printed on the back of your card.'),
+    '#attributes' => array(
+      'class' => array('card-cvc'),
+      'data-encrypted-name' => 'cvv',
+      'autocomplete' => 'off',
+    ),
+    //'#required' => TRUE,
+  );
+
+  $month_range = range('01', '12');
+  $month_options = array_combine($month_range, $month_range);
+  $form['payment']['month'] = array(
+    '#type' => 'select',
+    '#title' => t('Month'),
+    '#options' => $month_options,
+    '#attributes' => array('class' => array('card-expire-month')),
+  );
+
+  $year_range = range(date('Y'), date('Y') + 5);
+  $year_options = array_combine($year_range, $year_range);
+  $form['payment']['year'] = array(
+    '#type' => 'select',
+    '#title' => t('Year'),
+    '#options' => $year_options,
+    '#attributes' => array('class' => array('card-expire-year')),
+    '#suffix' => '<span class="payment-errors" style="color:#ff0000;"> </span>',
+  );
+
+  $form['html'] = array(
+  '#type' => 'markup',
+ '#markup' => '<a href="https://www.braintreegateway.com/merchants/n3cdm2sgkjqt5c4g/verified" target="_blank"><img src="https://braintree-badges.s3.amazonaws.com/05.png" border="0"/></a><br>For more information, see the <a href="https://www.braintreepayments.com/developers/security">Security Docs</a><br />',
+);
+  
+  $one = variable_get('ebookbraintree_publishable_testkey');
+  $two = variable_get('ebookbraintree_publishable_livekey');
+  $three = variable_get('ebookbraintree_gonelive');
+  if ($three > 0) {
+    $publishable_api_key = $two;
+  }
+  else {
+    $publishable_api_key = $one;
+  }
+
+  $form['ebookbraintree_publishable_key'] = array(
+    '#type' => 'hidden',
+    '#value' => $publishable_api_key,
+    '#attributes' => array('id' => array('ebookbraintree_publishable_key')),
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Submit'),
+    '#submit' => array('ebookbraintree_form_callback'),
+    '#attributes' => array('id' => array('braintreesubmit')),
+  );
+
+  $form['back'] = array(
+    '#type' => 'submit',
+    '#value' => t('<< Back'),
+    '#submit' => array('ebookbraintree_form_back'),
+    '#limit_validation_errors' => array(),
+  );
+
+
+  $one = variable_get('ebookbraintree_publishable_testkey');
+  $two = variable_get('ebookbraintree_publishable_livekey');
+  $three = variable_get('ebookbraintree_gonelive');
+  if ($three > 0) {
+    $ebookbraintree_publishable_key = $two;
+  }
+  else {
+    $ebookbraintree_publishable_key = $one;
+  }
+
+  $one = variable_get('ebookbraintree_secret_testkey');
+  $two = variable_get('ebookbraintree_secret_livekey');
+  $three = variable_get('ebookbraintree_gonelive');
+  if ($three > 0) {
+    $ebookbraintree_secret_key = $two;
+  }
+  else {
+    $ebookbraintree_secret_key = $one;
+  }
+  return $form;
+}
+
+/**
+ * Ajax validation on email and password.
+ *
+ * @param array $form
+ *   Elements to build the form.
+ *
+ * @param array $form_state
+ *   Values passed during form submission.
+ *
+ * @return string
+ */
+function _ebookbraintree_form_email_ajax_validate($form, &$form_state) {
+  // Validate as a true email format.
+  $email = check_plain(filter_xss($form_state['values']['billing']['email']));
+  $query = 'SELECT name FROM {users} where mail = :mail';
+  $result = db_query($query, array(':mail' => $email))->fetchField();
+  
+  if (!empty($result)) {
+$error = '<div id="email-error" style="color:#ff0000;">User is already registered.</div>';
+return $error;
+  } 
+  
+  // Validate as a true email format.`
+  elseif (filter_var($form_state['values']['billing']['email'], FILTER_VALIDATE_EMAIL) == FALSE) {
+    $error = '<div id="email-error" style="color:#ff0000;">The email is not valid.</div>';
+    return $error;
+  }
+  else {
+    $noerror = '<div id="email-error"> </div>';
+    return $noerror;
+  }
+}
+
+
+
+/**
+ * This is a validation form that checks if the user is already signed up.
+ */
+function ebookbraintree_check_customer($email, $password) {
+  $email = check_plain(filter_xss($email));
+  $password = check_plain(filter_xss($password));
+  $query = 'SELECT name FROM {users} where mail = :mail';
+  $result = db_query($query, array(':mail' => $email))->fetchField();
+  
+// If no errors and the drupal account was not found create a new user.
+  if (empty($result)) {
+    // Create User
+    $array = explode("@", $email);
+    $customername = $array[0];
+    $user_info = array();
+    $user_info['name'] = $customername;
+    $user_info['pass'] = $password;
+    $user_info['mail'] = $email;
+    $user_info['status'] = 1; // Set status to active.
+    $user_info['access'] = 0;
+    $user_info['login'] = 0;
+    $user_info['timezone'] = variable_get('date_default_timezone', '');
+    $user_info['data'] = FALSE;
+    
+user_save(NULL, $user_info);
+$user_obj = user_load_by_name($customername);
+$form_state = array();
+$form_state['uid'] = $user_obj->uid;
+user_login_submit(array(), $form_state);
+// user_login_finalize();      
+}
+return $result;
+}
+
+/**
+ * Validate billing section of form (page 1).
+ *
+ * @param array $form
+ *   Elements to build the form.
+ *
+ * @param array $form_state
+ *   Values passes during form submission.
+ */
+function ebookbraintree_form_billing_validate($form, $form_state) {
+  // Validate as a true email format.
+  if (filter_var($form_state['values']['billing']['email'], FILTER_VALIDATE_EMAIL) == FALSE) {
+    form_set_error('billing][email', t('This email is not valid.'));
+  }
+  $email = check_plain(filter_xss($form_state['values']['billing']['email']));
+  $query = 'SELECT name FROM {users} where mail = :mail';
+  $result = db_query($query, array(':mail' => $email))->fetchField();
+  
+  global $user;
+  if($user->uid == 0)
+  {
+    if ($form_state['values']['billing']['password'] != $form_state['values']['billing']['conf-password']) {
+    form_set_error('billing][conf-password', t('The passwords did not match.'));
+    }
+    if (!empty($result)) {
+    drupal_set_message("The user email is already registered.  Please login to continue.");
+    drupal_goto("user/login");
+    }
+  }
+  
+  if (stristr($form_state['values']['billing']['product'], "chapter")) {
+    //product comes from hidden form element from previous url.  Need to make sure this is a valid url.
+  }
+  else {
+  form_set_error('billing][product', t('Invalid product to purchase'));
+  }  
+}
+
+/**
+ * Process Braintree Charge and save user data.
+ *
+ * @param array $form
+ * @param array $form_state
+ */
+function ebookbraintree_form_callback($form, $form_state) {
+  // Require Braintree Library.
+  // NOTE: Transition this to using the Library 2.0 API
+  require_once("lib/braintree-php-2.10.0/lib/Braintree.php");
+
+  $one = variable_get('ebookbraintree_publishable_testkey');
+  $two = variable_get('ebookbraintree_publishable_livekey');
+  $three = variable_get('ebookbraintree_gonelive');
+  if ($three > 0) {
+    $ebookbraintree_publishable_key = $two;
+  }
+  else {
+    $ebookbraintree_publishable_key = $one;
+  }
+
+  $one = variable_get('ebookbraintree_secret_testkey');
+  $two = variable_get('ebookbraintree_secret_livekey');
+  $three = variable_get('ebookbraintree_gonelive');
+  if ($three > 0) {
+    $ebookbraintree_secret_key = $two;
+  }
+  else {
+    $ebookbraintree_secret_key = $one;
+  }
+
+  $one = variable_get('ebookbraintree_merchantId_testkey');
+  $two = variable_get('ebookbraintree_merchantId_livekey');
+  $three = variable_get('ebookbraintree_gonelive');
+  if ($three > 0) {
+    $ebookbraintree_merchantId = $two;
+  }
+  else {
+    $ebookbraintree_merchantId = $one;
+  }
+  
+  //  empty($ebookbraintree_secret_key) ? NULL : ebookbraintree::setApiKey($ebookbraintree_secret_key);
+  Braintree_Configuration::environment(variable_get('ebookbraintree_environment'));
+  Braintree_Configuration::merchantId($ebookbraintree_merchantId);
+  Braintree_Configuration::publicKey($ebookbraintree_publishable_key);
+  Braintree_Configuration::privateKey($ebookbraintree_secret_key);
+
+  // Assign billing data for easier referencing.
+  $billing_values = $form_state['page_values']['1'];
+  $price = variable_get('ebookbraintree_price') * 100;
+ 
+  global $user;
+  if($user->uid == 0)
+  {
+  $customer_id = ebookbraintree_check_customer($billing_values['billing']['email'], $billing_values['billing']['password']);
+  }
+  
+$result = Braintree_Transaction::sale(array(
+    'amount' => variable_get('ebookbraintree_price'),
+    'creditCard' => array(
+      'number' => $form_state['values']['card'],
+      'expirationMonth' => $form_state['values']['month'],
+      'expirationYear' => $form_state['values']['year'],
+    ),
+  ));
+
+  if ($result->success) {
+    
+    if (!empty($billing_values['billing']['firstname']))
+    {
+    $contactname = $billing_values['billing']['firstname'];
+    $firstName = $billing_values['billing']['firstname'];
+    }
+    else
+    {
+    $contactname = "unknown";
+    $firstName = 'unknown';
+    }
+    
+    if (!empty($billing_values['billing']['lastname']))
+    {
+    $lastName = $billing_values['billing']['lastname'];
+    }
+    else
+    {
+    $lastName = 'unknown';
+    }
+    
+    if (!empty($billing_values['billing']['email']))
+    {
+    $email = $billing_values['billing']['email'];
+    }
+    else
+    {
+    $email = 'unknown';
+    }
+    
+    if (!empty($billing_values['billing']['phone']))
+    {
+    $phone = $billing_values['billing']['phone'];
+    }
+    else
+    {
+    $phone = 'unknown';
+    }
+    
+    if (!empty($billing_values['billing']['address']))
+    {
+    $streetAddress = $billing_values['billing']['address'];
+    }
+    else
+    {
+    $streetAddress = 'unknown';
+    }
+    
+    if (!empty($billing_values['billing']['address2']))
+    {
+    $extendedAddress = $billing_values['billing']['address2'];
+    }
+    else
+    {
+    $extendedAddress = 'unknown';
+    }
+    
+    if (!empty($billing_values['billing']['address2']))
+    {
+    $extendedAddress = $billing_values['billing']['address2'];
+    }
+    else
+    {
+    $extendedAddress = 'unknown';
+    }
+    
+    if (!empty($billing_values['billing']['city']))
+    {
+    $locality = $billing_values['billing']['city'];
+    }
+    else
+    {
+    $locality = 'unknown';
+    }
+    
+    if (!empty($billing_values['billing']['state']))
+    {
+    $region = $billing_values['billing']['state'];
+    }
+    else
+    {
+    $region = 'unknown';
+    }
+    
+    if (!empty($billing_values['billing']['zip']))
+    {
+    $postalCode = $billing_values['billing']['zip'];
+    }
+    else
+    {
+    $postalCode = 'unknown';
+    }
+    
+    $result2 = Braintree_Customer::create(array(
+    'firstName' => $firstName,
+    'lastName' => $lastName,
+    'email' => $email,
+    'phone' => $phone,
+   'creditCard' => array(
+       'number' => $form_state['values']['card'],
+     'expirationMonth' => $form_state['values']['month'],
+     'expirationYear' => $form_state['values']['year'],
+        'cardholderName' => 'Mike Jones',
+        'billingAddress' => array(
+            'firstName' => $firstName,
+            'lastName' => $lastName,
+            'streetAddress' => $streetAddress,
+            'extendedAddress' => $extendedAddress,
+            'locality' => $locality,
+            'region' => $region,
+            'postalCode' => $postalCode,
+            'countryCodeAlpha2' => 'US'
+        )
+    )
+ ));
+
+$customer = $result2->customer;
+$creditCard = $customer->creditCards[0];
+drupal_set_message(t((" Transaction success ID: " .  check_plain($result->transaction->id))));
+
+
+  $nid = db_insert('ebookbraintree_customers')->fields(array(
+    'timestamp' => REQUEST_TIME,
+    'contactname' => $customer->id,
+    'contactemail' => $billing_values['billing']['email'],
+    'booktype' => arg(4),
+  ))->execute();
+
+global $user;
+$uid = $user->uid; // User ID of user that you want to add role to.
+$role_name = arg(4); // The name of the role to add.
+if ($role = user_role_load_by_name($role_name)) {
+user_multiple_role_edit(array($uid), 'add_role', $role->rid);
+}
+  
+  $testvariable = variable_get('ebookbraintree_sendemail');
+  if ($testvariable > 0) {
+  $module = 'ebookbraintree';
+  $key = 'key';
+  $to = $billing_values['billing']['email'];
+
+  $language = language_default();
+  $params = array();
+  $from = NULL;
+  $send = FALSE;
+  $message = drupal_mail($module, $key, $to, $language, $params, $from, $send);
+  $sitename = variable_get('site_name', '');
+  $siteadmin = variable_get('site_mail', '');
+  $subject = 'Receipt for order from ' . $sitename;
+  $message['headers']['CC'] = $siteadmin;
+  $message['subject'] = $subject;
+  $message['body'] = array();
+  $message['body'][] = $to . ", login to " . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'] . " to see your order for $" . variable_get('ebookbraintree_price') . " on " . date('l jS \of F Y h:i:s A');
+
+  // Retrieve the responsible implementation for this message.
+  $system = drupal_mail_system($module, $key);
+
+  // Format the message body.
+  $message = $system->format($message);
+
+  // Send e-mail.
+  $message['result'] = $system->mail($message);
+
+  if ($message['result'] == TRUE) {
+    drupal_set_message(t('Your receipt has been sent. Thank you!'));
+  }
+  else {
+    drupal_set_message(t('There was a problem sending your receipt and it was not sent.'), 'error');
+  }
+  }
+drupal_goto();
+
+}
+
+elseif ($result->transaction) {
+    drupal_set_message(t("Error processing transaction:"), 'error');
+    drupal_set_message(t("\n  message: " . check_plain($result->message)), 'error');
+    drupal_set_message(t("\n  code: " . check_plain($result->transaction->processorResponseCode)), 'error');
+    drupal_set_message(t("\n  text: " . check_plain($result->transaction->processorResponseText)), 'error');
+  }
+  else {
+    $errormessages = serialize($result->errors->deepAll());
+    drupal_set_message(t("Message: " . check_plain($result->message)), 'error');
+    drupal_set_message(t("\nValidation errors: \n"), 'error');
+    drupal_set_message(t($errormessages), 'error');
+  }
+}
+
+
+/**
+ * If the user is viewing a node type of ebookbraintree, show them the buy now button.  What else is the purpose of this module?
+ * TODO: lots of stuff here - very alpha attempt
+ */
+function ebookbraintree_node_view($node, $view_mode) {
+  if ($view_mode != 'rss') {
+    if ($node->type == 'ebookbraintree_product' && (arg(1) != $node->uid)) {
+      $node->content['node'] = array(
+// if drupal installation is in the site root, uncomment the line below
+//        '#markup' => "<a href='buynow' id='buynowbutton' name='buynowbutton'>Checkout</a>",
+// our drupal installation is in a sub-directory so we hard code it like this for it to work for now
+        '#markup' => "<a href='http://dev-biolithic.gotpantheon.com/chapter/buynow' id='buynowbutton' name='buynowbutton'>Buy Now</a>",
+        '#weight' => 100,
+      );
+    }
+  }
+}
+
+
+
+/**
+ * Return an array of fields, to be used during the install and uninstall process.
+ */
+function _ebookbraintree_installed_fields_local() {
+  return array(
+    'ebookbraintree_title' => array(
+      'field_name' => 'ebookbraintree_title',
+      'type' => 'text',
+      'cardinality' => 1,
+    ),
+    'ebookbraintree_author' => array(
+      'field_name' => 'ebookbraintree_author',
+      'type' => 'text',
+      'cardinality' => 1,
+    ),
+    'ebookbraintree_tag_line' => array(
+      'field_name' => 'ebookbraintree_tag_line',
+      'type' => 'text',
+      'cardinality' => 1,
+    ),
+    'ebookbraintree_price' => array(
+      'field_name' => 'ebookbraintree_price',
+      'type' => 'text',
+      'cardinality' => 1,
+    ),
+    'ebookbraintree_version' => array(
+      'field_name' => 'ebookbraintree_version',
+      'type' => 'text',
+      'cardinality' => 1,
+    ),
+    'ebookbraintree_cover_image' => array(
+      'field_name' => 'ebookbraintree_cover_image',
+      'type' => 'image',
+      'cardinality' => 1,
+    ),
+  );
+}
+
+
+/**
+ * Return an array of instances, to be used during the install and uninstall process.
+ */
+function _ebookbraintree_installed_instances_local() {
+  $t = get_t();
+  return array(
+    'ebookbraintree_title' => array(
+      'field_name' => 'ebookbraintree_title',
+      'label' => $t('Book Title'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+    ),
+    'ebookbraintree_author' => array(
+      'field_name' => 'ebookbraintree_author',
+      'label' => $t('Book Author'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+    ),
+    'ebookbraintree_tag_line' => array(
+      'field_name' => 'ebookbraintree_tag_line',
+      'label' => $t('Book Tag Line'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+    ),
+    'ebookbraintree_price' => array(
+      'field_name' => 'ebookbraintree_price',
+      'label' => $t('Book Price'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+    ),
+    'ebookbraintree_version' => array(
+      'field_name' => 'ebookbraintree_version',
+      'label' => $t('Which versions: pdf, epub, mobi, etc'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text',
+      ),
+    ),
+    'ebookbraintree_cover_image' => array(
+      'field_name' => 'ebookbraintree_cover_image',
+      'label' => $t('Upload an image:'),
+      'required' => FALSE,
+      'widget' => array(
+        'type' => 'image_image',
+      ),
+    ),
+  );
+}
+
+
+function ebookbraintree_load_chapter()
+{
+if (arg(0) == "book" &&  !is_numeric(arg(1)) && arg(2) == "chapter" &&  is_numeric(arg(3)))
+{
+$theterm = arg(1) . "_" . arg(2) . arg(3);
+$term = taxonomy_get_term_by_name($theterm);
+if (isset($term))
+{
+
+global $user;
+if (in_array($theterm, $user->roles)) {
+$termid = key($term);
+$query = new EntityFieldQuery();
+$entities = $query->entityCondition('entity_type', 'node')
+   ->propertyCondition('status', 1)
+    ->fieldCondition('field_ebookbraintree_chapter', 'tid', "$termid")
+   ->execute();  
+$nodes = entity_load('node', array_keys($entities['node']));
+return node_view_multiple($nodes, 'full');
+}
+else
+{
+// $tid = $terms[0]->tid;
+ $termid = key($term);
+ $query = new EntityFieldQuery();
+ $entities = $query->entityCondition('entity_type', 'node')
+   ->propertyCondition('status', 1)
+  // ->fieldCondition('field_ebookbraintree_chapter', 'ebookbraintree', 'chapter1', '=')
+    ->fieldCondition('field_ebookbraintree_chapter', 'tid', "$termid")
+   ->execute();  
+ $nodes = entity_load('node', array_keys($entities['node']));
+ return node_view_multiple($nodes, 'teaser');
+}
+}
+}
+else
+{
+return drupal_set_message("hello");  
+}
+}
