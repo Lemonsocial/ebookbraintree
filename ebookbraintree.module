@@ -916,8 +916,10 @@ function ebookbraintree_form_callback($form, $form_state)
 {
     // Require Braintree Library.
     // NOTE: Transition this to using the Library 2.0 API
-    require_once("lib/braintree-php-2.10.0/lib/Braintree.php");
-    
+    if (($library = libraries_load('braintree')) && !empty($library['loaded'])) {
+    } else {
+      require_once("lib/braintree-php-2.10.0/lib/Braintree.php");
+    }
     $one   = variable_get('ebookbraintree_publishable_testkey');
     $two   = variable_get('ebookbraintree_publishable_livekey');
     $three = variable_get('ebookbraintree_gonelive');
@@ -1108,8 +1110,8 @@ function ebookbraintree_form_callback($form, $form_state)
                 drupal_set_message(t('There was a problem sending your receipt and it was not sent.'), 'error');
             }
         }
-        drupal_goto();
-        
+        $redirectpage = "/" . arg(1) . "/table_of_contents";
+        drupal_goto($redirectpage);
     }
     
     elseif ($result->transaction) {
